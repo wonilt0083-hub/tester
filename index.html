@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1-4 수학 자리배치 프로그램</title>
+    <style>
+        :root {
+            --bg-color: #f4f6f9;
+            --desk-color: #ffffff;
+            --desk-border: #cbd5e1;
+            --teacher-color: #3b82f6;
+            --locked-color: #fca5a5;
+        }
+        body { font-family: 'Pretendard', sans-serif; background: var(--bg-color); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-x: hidden; }
+        
+        /* 상단 네비게이션 & 저장 상태 */
+        .header { width: 100%; max-width: 1000px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .storage-info { background: #e2e8f0; padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; color: #475569; display: flex; align-items: center; gap: 10px; }
+        
+        /* 메인 컨테이너 */
+        .main-container { display: flex; gap: 20px; width: 100%; max-width: 1400px; justify-content: center; align-items: flex-start; height: calc(100vh - 100px); }
+        
+        /* 컨트롤 패널 (교사 페이지) */
+        .controls { width: 320px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: none; flex-shrink: 0; max-height: 100%; overflow-y: auto; }
+        .controls.active { display: block; }
+        .controls h2 { margin-top: 0; font-size: 1.2rem; color: #333; display: flex; justify-content: space-between; align-items: center; }
+        textarea { width: 100%; height: 120px; margin-bottom: 10px; padding: 10px; border: 1px solid var(--desk-border); border-radius: 8px; box-sizing: border-box; resize: none; font-family: inherit; }
+        button { width: 100%; padding: 10px; margin-bottom: 8px; border: none; border-radius: 8px; background: #e2e8f0; color: #333; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { background: #cbd5e1; }
+        button.primary { background: #3b82f6; color: white; }
+        button.primary:hover { background: #2563eb; }
+        button.warning { background: #ef4444; color: white; }
+        button.warning:hover { background: #dc2626; }
+        .flex-btn { display: flex; gap: 8px; }
+        
+        /* 자리배치 뷰어 */
+        .viewer { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow: hidden; position: relative; height: 100%; box-sizing: border-box; cursor: grab; }
+        .viewer:active { cursor: grabbing; }
+
+        /* 확대/축소용 래퍼 */
+        #zoomWrapper {
+            transition: transform 0.1s ease-out;
+            transform-origin: top center;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        .classroom { display: flex; flex-direction: column; align-items: center; gap: 40px; transition: transform 0.3s; width: max-content; padding-bottom: 20px; }
+        
+        /* 180도 회전용 */
+        .classroom.rotated { transform: rotate(180deg); }
+        .classroom.rotated .desk { transform: rotate(180deg); }
+        .classroom.rotated .teacher-desk { transform: rotate(180deg); }
+
+        .desk-grid { display: grid; gap: 15px; justify-content: center; width: 100%; }
+        /* 화면용 5열/6열 고정 픽셀 너비 */
+        .grid-5 { grid-template-columns: repeat(5, 120px); }
+        .grid-6 { grid-template-columns: 120px 120px 40px 120px 120px 40px 120px 120px; }
+
+        .desk { background: var(--desk-color); border: 2px solid var(--desk-border); border-radius: 8px; height: 65px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.1rem; position: relative; user-select: none; transition: all 0.2s; }
+        .desk.editable { cursor: pointer; }
+        .desk.empty { border: 2px dashed #94a3b8; background: #f8fafc; color: #94a3b8; font-size: 0.9rem; }
+        .desk.drag-over { border-color: var(--teacher-color); transform: scale(1.05); z-index: 10; background: #eff6ff; }
+        .desk.locked { border-color: var(--locked-color); background: #fef2f2; }
+        
+        /* 통로 (투명한 공간) */
+        .aisle { width: 100%; height: 100%; pointer-events: none; }
+
+        /* 자물쇠(고정) 버튼 */
+        .lock-btn { position: absolute; top: -10px; right: -10px; background: white; border: 1px solid #ccc; border-radius: 50%; width: 24px; height: 24px; font-size: 12px; display: none; align-items: center; justify-content: center; cursor: pointer; z-index: 5; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .desk.editable:hover .lock-btn { display: flex; }
+        .desk.locked .lock-btn { display: flex; background: #ef4444; color: white; border-color: #ef4444; }
+
+        .teacher-desk { width: 250px; height: 50px; background: var(--teacher-color); color: white; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: bold; font-size: 1.2rem; }
+
+        .hidden { display: none !important; }
+
+        /* 인쇄 최적화 */
+        @media print {
+            @page { size: A4 landscape; margin: 10mm; }
+            body { background: white; padding: 0; display: block; overflow: visible; height: auto; }
+            .header, .controls, .storage-info { display: none !important; }
+            .main-container { display: block; width: 100%; max-width: 100%; height: auto; }
+            .viewer { box-shadow: none; padding: 0; width: 100%; max-width: 100%; overflow: visible; }
+            
+            #zoomWrapper { transform: none !important; width: 100%; display: block; }
+            .classroom { width: 100% !important; max-width: 100%; margin: 0 auto; padding-top: 20px; }
+            
+            .grid-6 { grid-template-columns: repeat(2, 1fr) 20px repeat(2, 1fr) 20px repeat(2, 1fr) !important; gap: 10px !important; }
+            .grid-5 { grid-template-columns: repeat(5, 1fr) !important; gap: 10px !important; }
+            
+            .desk { height: 60px; font-size: 14pt; border-color: #000; border-width: 1px; color: #000; }
+            .desk.empty { border-style: dotted; }
+            .desk.locked { background: transparent; }
+            .lock-btn { display: none !important; }
+            .teacher-desk { width: 200px; margin: 0 auto; background: #ddd; color: #000; border: 1px solid #000; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>배곧해솔중 자리배치</h1>
+        <div class="storage-info">
+            <span id="saveStatus">데이터 위치: 브라우저 임시저장소</span>
+            <button onclick="document.getElementById('fileInput').click()" style="margin:0; padding: 6px 12px; width:auto; font-size:0.8rem;">📂 불러오기</button>
+            <button onclick="exportData()" class="primary" style="margin:0; padding: 6px 12px; width:auto; font-size:0.8rem;">💾 파일로 백업</button>
+            <input type="file" id="fileInput" accept=".json" style="display: none;" onchange="importData(event)">
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="controls active" id="teacherControls">
+            <h2>👨‍🏫 설정 패널</h2>
+            
+            <p style="font-size: 0.85rem; color: #666; margin-bottom: 5px;">* 학생 명단을 줄바꿈으로 입력 후 [명단 덮어쓰기]를 누르세요.</p>
+            <textarea id="studentList"></textarea>
+            <button onclick="applyList()" class="warning">📝 명단 덮어쓰기</button>
+            
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
+            
+            <div class="flex-btn">
+                <button onclick="setLayout(5)">5열 배치</button>
+                <button onclick="setLayout(6)">6열(분단) 배치</button>
+            </div>
+            <div class="flex-btn">
+                <button onclick="addSeat()">➕ 자리 추가</button>
+                <button onclick="removeSeat()">➖ 자리 삭제</button>
+            </div>
+            
+            <button class="primary" onclick="shuffleSeats()" style="margin-top: 10px;">🎲 랜덤 자리 섞기 (고정 제외)</button>
+
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
+            
+            <button onclick="printView('teacher')">🖨️ 교탁용 출력 (교탁 아래)</button>
+            <button onclick="printView('class')">🖨️ 학급 게시용 출력 (교탁 위)</button>
+        </div>
+
+        <div class="viewer" id="viewerArea">
+            <div id="zoomWrapper">
+                <div class="classroom" id="classroom">
+                    <div class="desk-grid grid-6" id="deskGrid">
+                        </div>
+                    <div class="teacher-desk">교탁</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let state = { layout: 6, seats: [] };
+
+        function initSeats() {
+            state.seats = [];
+            for (let i = 0; i < 30; i++) { state.seats.push({ id: i, name: "", locked: false }); }
+        }
+
+        function renderDesks() {
+            const grid = document.getElementById('deskGrid');
+            grid.innerHTML = '';
+            grid.className = 'desk-grid ' + (state.layout === 5 ? 'grid-5' : 'grid-6');
+
+            state.seats.forEach((seat, index) => {
+                const deskEl = document.createElement('div');
+                deskEl.className = 'desk';
+                if (!seat.name) deskEl.classList.add('empty');
+                if (seat.locked) deskEl.classList.add('locked');
+                deskEl.classList.add('editable');
+
+                deskEl.innerHTML = seat.name ? seat.name : "빈 자리";
+
+                deskEl.draggable = true;
+
+                const lockBtn = document.createElement('button');
+                lockBtn.className = 'lock-btn';
+                lockBtn.innerHTML = seat.locked ? '🔒' : '🔓';
+                lockBtn.onclick = (e) => { e.stopPropagation(); toggleLock(index); };
+                deskEl.appendChild(lockBtn);
+
+                deskEl.dataset.index = index;
+                deskEl.addEventListener('dragstart', handleDragStart);
+                deskEl.addEventListener('dragover', handleDragOver);
+                deskEl.addEventListener('drop', handleDrop);
+                deskEl.addEventListener('dragenter', handleDragEnter);
+                deskEl.addEventListener('dragleave', handleDragLeave);
+
+                grid.appendChild(deskEl);
+
+                if (state.layout === 6) {
+                    if (index % 6 === 1 || index % 6 === 3) {
+                        const aisle = document.createElement('div');
+                        aisle.className = 'aisle';
+                        grid.appendChild(aisle);
+                    }
+                }
+            });
+            autoSave();
+            updateTextarea();
+        }
+
+        function toggleLock(index) {
+            state.seats[index].locked = !state.seats[index].locked;
+            renderDesks();
+        }
+
+        function setLayout(cols) { state.layout = cols; renderDesks(); }
+        function addSeat() { state.seats.push({ id: Date.now(), name: "", locked: false }); renderDesks(); }
+        function removeSeat() { if (state.seats.length > 0) { state.seats.pop(); renderDesks(); } }
+
+        function applyList() {
+            const list = document.getElementById('studentList').value.split('\n').map(n => n.trim()).filter(n => n !== '');
+            for (let i = 0; i < state.seats.length; i++) {
+                if (!state.seats[i].locked) { state.seats[i].name = list.shift() || ""; }
+            }
+            renderDesks();
+        }
+
+        function updateTextarea() {
+            const names = state.seats.map(s => s.name).filter(n => n !== '');
+            document.getElementById('studentList').value = names.join('\n');
+        }
+
+        function shuffleSeats() {
+            let unlockedIndices = [];
+            let unlockedNames = [];
+            
+            state.seats.forEach((seat, i) => {
+                if (!seat.locked) {
+                    unlockedIndices.push(i);
+                    unlockedNames.push(seat.name);
+                }
+            });
+
+            for (let i = unlockedNames.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [unlockedNames[i], unlockedNames[j]] = [unlockedNames[j], unlockedNames[i]];
+            }
+
+            unlockedIndices.forEach((index, i) => { state.seats[index].name = unlockedNames[i]; });
+            renderDesks();
+        }
+
+        let dragSrcIndex = null;
+        function handleDragStart(e) { dragSrcIndex = this.dataset.index; e.dataTransfer.effectAllowed = 'move'; this.style.opacity = '0.5'; }
+        function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; return false; }
+        function handleDragEnter(e) { this.classList.add('drag-over'); }
+        function handleDragLeave(e) { this.classList.remove('drag-over'); }
+
+        function handleDrop(e) {
+            e.stopPropagation();
+            const targetIndex = this.dataset.index;
+            if (dragSrcIndex !== targetIndex) {
+                const tempName = state.seats[dragSrcIndex].name;
+                const tempLocked = state.seats[dragSrcIndex].locked;
+                state.seats[dragSrcIndex].name = state.seats[targetIndex].name;
+                state.seats[dragSrcIndex].locked = state.seats[targetIndex].locked;
+                state.seats[targetIndex].name = tempName;
+                state.seats[targetIndex].locked = tempLocked;
+                renderDesks();
+            }
+            return false;
+        }
+
+        document.addEventListener('dragend', function() {
+            document.querySelectorAll('.desk').forEach(desk => { desk.classList.remove('drag-over'); desk.style.opacity = '1'; });
+        });
+
+        function autoSave() { localStorage.setItem('seatState', JSON.stringify(state)); }
+        function loadFromLocal() {
+            const saved = localStorage.getItem('seatState');
+            if (saved) { state = JSON.parse(saved); } else { initSeats(); }
+            renderDesks();
+        }
+
+        // 백업 시 날짜 포맷 적용 로직
+        function exportData() {
+            const now = new Date();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            
+            const fileName = `자리_${month}${day}_${hours}${minutes}.json`;
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
+            
+            const dlAnchorElem = document.createElement('a');
+            dlAnchorElem.setAttribute("href", dataStr);
+            dlAnchorElem.setAttribute("download", fileName);
+            dlAnchorElem.click();
+            
+            document.getElementById('saveStatus').innerText = `데이터 위치: [${fileName}] 다운로드 완료`;
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    state = JSON.parse(e.target.result);
+                    renderDesks();
+                    document.getElementById('saveStatus').innerText = `데이터 위치: [${file.name}] 파일 적용됨`;
+                } catch(err) { alert('파일 형식이 잘못되었습니다.'); }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        let currentZoom = 1.0;
+        const viewerArea = document.getElementById('viewerArea');
+        const zoomWrapper = document.getElementById('zoomWrapper');
+
+        viewerArea.addEventListener('wheel', function(e) {
+            e.preventDefault(); 
+            if (e.deltaY < 0) { currentZoom += 0.05; } else { currentZoom -= 0.05; }
+            currentZoom = Math.min(Math.max(0.4, currentZoom), 2.0);
+            zoomWrapper.style.transform = `scale(${currentZoom})`;
+        }, { passive: false });
+
+        function printView(type) {
+            const classroom = document.getElementById('classroom');
+            const originalZoom = zoomWrapper.style.transform;
+            zoomWrapper.style.transform = 'scale(1)';
+            
+            if (type === 'class') classroom.classList.add('rotated');
+            else classroom.classList.remove('rotated');
+            
+            setTimeout(() => {
+                window.print();
+                classroom.classList.remove('rotated');
+                zoomWrapper.style.transform = originalZoom;
+            }, 300);
+        }
+
+        window.onload = () => { loadFromLocal(); };
+    </script>
+</body>
+</html>
